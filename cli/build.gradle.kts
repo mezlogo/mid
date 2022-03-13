@@ -1,17 +1,20 @@
 plugins {
     id("mezlogo.common-build")
+    application
 }
 
 dependencies {
-    implementation("info.picocli:picocli:4.6.2")
     implementation(project(":core"))
     implementation(project(":api"))
+    implementation("info.picocli:picocli:4.6.3")
+    annotationProcessor("info.picocli:picocli-codegen:4.6.3")
 }
 
-val jar by tasks.getting(org.gradle.jvm.tasks.Jar::class) {
-    this.duplicatesStrategy = DuplicatesStrategy.INCLUDE
-    manifest {
-        attributes["Main-Class"] = "mezlogo.mid.cli.Main"
-    }
-    from(configurations["runtimeClasspath"].map { if (it.isDirectory) it else zipTree(it) })
+tasks.withType(JavaCompile::class.java) {
+    options.compilerArgs.add("-Aproject=${project.group}/${project.name}")
+}
+
+application {
+    mainClass.set("mezlogo.mid.cli.Main")
+    applicationName = "mid"
 }

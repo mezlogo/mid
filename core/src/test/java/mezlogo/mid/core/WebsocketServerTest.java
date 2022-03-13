@@ -3,6 +3,7 @@ package mezlogo.mid.core;
 import mezlogo.mid.core.netty.NettyHttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertLinesMatch;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 @Tag("integration")
+@Disabled
 class WebsocketServerTest {
     public static final int PORT_HTTP = 32125;
     public static final int PORT_HTTPS = 32126;
