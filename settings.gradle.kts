@@ -1,2 +1,2 @@
 rootProject.name = "mid"
-include("core", "api", "cli")
+include("mid-api", "mid-netty", "mid-cli")
