@@ -62,7 +62,7 @@ class HttpClientTest {
     }
 
     @ParameterizedTest
-    @MethodSource("mezlogo.mid.core.HttpClientTest#testdata")
+    @MethodSource("mezlogo.mid.netty.HttpClientTest#testdata")
     void should_return_body_as_LENGTH(String uriAsString, HttpMethod method, BodyType type, String requestBody, String expected) {
         var uri = URI.create(uriAsString);
         int length = LENGTH == type ? requestBody.length() : -1;

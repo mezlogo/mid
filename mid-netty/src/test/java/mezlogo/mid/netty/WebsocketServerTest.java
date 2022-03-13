@@ -49,7 +49,7 @@ class WebsocketServerTest {
 
     @ParameterizedTest
     @Timeout(1)
-    @MethodSource("mezlogo.mid.core.WebsocketClientTest#testdata")
+    @MethodSource("mezlogo.mid.netty.WebsocketClientTest#testdata")
     void should_send_messages_by_websocket(String uriAsString, List<String> publish, List<String> expected) {
         var uri = URI.create(uriAsString);
         var res = HttpServerTestUtils.callWebsocket(uri, publish);

@@ -9,7 +9,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api:1.7.33")
     implementation("ch.qos.logback:logback-classic:1.2.10")
 
-    implementation(project(":api"))
+    implementation(project(":mid-api"))
 
     testImplementation("io.undertow:undertow-core:2.2.14.Final")
 }

@@ -71,7 +71,7 @@ class HttpServerTest {
 
 
     @ParameterizedTest
-    @MethodSource("mezlogo.mid.core.HttpServerTest#testData")
+    @MethodSource("mezlogo.mid.netty.HttpServerTest#testData")
     void should_return_body_as_LENGTH(String uriAsString, HttpMethod method, BodyType type, String requestBody, String expected) {
         var uri = URI.create(uriAsString);
         var response = sendAsync(uri.getScheme().equals("https"), uri.getPort(), uri.getPath(), type, method, requestBody).join();
@@ -83,7 +83,7 @@ class HttpServerTest {
     }
 
     @ParameterizedTest
-    @MethodSource("mezlogo.mid.core.HttpServerTest#testDataChunkStream")
+    @MethodSource("mezlogo.mid.netty.HttpServerTest#testDataChunkStream")
     void should_return_chunk_strem(String uriAsString, String message1, String message2, String expected) {
         var uri = URI.create(uriAsString);
         var body1 = new ByteArrayInputStream(message1.getBytes(StandardCharsets.UTF_8));

@@ -4,8 +4,8 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":core"))
-    implementation(project(":api"))
+    implementation(project(":mid-netty"))
+    implementation(project(":mid-api"))
     implementation("info.picocli:picocli:4.6.3")
     annotationProcessor("info.picocli:picocli-codegen:4.6.3")
 }
