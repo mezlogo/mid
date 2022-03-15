@@ -9,12 +9,13 @@ import mezlogo.mid.api.utils.Subscribers;
 import mezlogo.mid.netty.NettyHttpClient;
 import picocli.CommandLine;
 
+import java.io.PrintStream;
 import java.net.URI;
 import java.util.Collections;
 import java.util.List;
 
-@CommandLine.Command(name = "curl", mixinStandardHelpOptions = true)
-public class CurlCommand implements Runnable {
+@CommandLine.Command(name = "client", mixinStandardHelpOptions = true)
+public class ClientCommand implements Runnable {
     @CommandLine.Parameters
     URI uri;
 
@@ -26,6 +27,8 @@ public class CurlCommand implements Runnable {
 
     @CommandLine.Option(names = "-d")
     String data;
+
+    public PrintStream out = System.out;
 
     public int port() {
         return 0 <= uri.getPort() ? uri.getPort() : 80;
@@ -64,6 +67,6 @@ public class CurlCommand implements Runnable {
         Subscribers.AggregateSubscriber subscriber = new Subscribers.AggregateSubscriber();
         result.getValue().subscribe(subscriber);
         var body = String.join("", subscriber.future.join());
-        System.out.println(body);
+        out.println(body);
     }
 }

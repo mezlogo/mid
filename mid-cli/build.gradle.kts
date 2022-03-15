@@ -8,6 +8,8 @@ dependencies {
     implementation(project(":mid-api"))
     implementation("info.picocli:picocli:4.6.3")
     annotationProcessor("info.picocli:picocli-codegen:4.6.3")
+    testImplementation("org.testcontainers:testcontainers:1.16.3")
+    testImplementation("org.testcontainers:junit-jupiter:1.16.3")
 }
 
 tasks.withType(JavaCompile::class.java) {
