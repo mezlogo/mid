@@ -1,26 +1,14 @@
 package mezlogo.mid.netty;
 
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
-import io.netty.channel.ServerChannel;
-import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.http.DefaultFullHttpResponse;
-import io.netty.handler.codec.http.HttpObject;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpServerCodec;
-import io.netty.handler.codec.http.HttpVersion;
 import mezlogo.mid.api.HttpTunnelServer;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 public class NettyHttpTunnelServer extends HttpTunnelServer {
@@ -35,17 +23,7 @@ public class NettyHttpTunnelServer extends HttpTunnelServer {
             @Override
             protected void initChannel(Channel ch) throws Exception {
                 ch.pipeline().addLast("http-server-codec", new HttpServerCodec())
-                        .addLast("http-echo-handler", new SimpleChannelInboundHandler<HttpObject>() {
-                            @Override
-                            protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
-                                if (msg instanceof HttpRequest request) {
-                                    var body = "You asked for: " + request.uri() + " using method: " + request.method();
-                                    ctx.writeAndFlush(NettyUtils.createResponse(HttpResponseStatus.OK, Optional.of(body)))
-                                            .addListener(ChannelFutureListener.CLOSE);
-                                }
-                            }
-                        });
-
+                        .addLast("http-tunnel-handler", new HttpTunnelHandler(null, null));
             }
         };
     }
