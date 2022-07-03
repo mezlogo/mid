@@ -1,5 +1,6 @@
 package mezlogo.mid.cli.commands;
 
+import io.netty.channel.nio.NioEventLoopGroup;
 import mezlogo.mid.api.HttpTunnelServer;
 import mezlogo.mid.netty.NettyHttpTunnelServer;
 import picocli.CommandLine;
@@ -13,7 +14,7 @@ public class TunnelCommand implements Runnable {
 
     @Override
     public void run() {
-        HttpTunnelServer httpTunnelServer = new NettyHttpTunnelServer(NettyHttpTunnelServer.createServer(NettyHttpTunnelServer.tunnelInitializer()));
+        HttpTunnelServer httpTunnelServer = new NettyHttpTunnelServer(NettyHttpTunnelServer.createServer(NettyHttpTunnelServer.tunnelInitializer(), new NioEventLoopGroup()));
         CompletableFuture<Void> future = httpTunnelServer.bind(port).start();
         try {
             future.join();

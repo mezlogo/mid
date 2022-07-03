@@ -1,5 +1,6 @@
 package mezlogo.mid.netty;
 
+import io.netty.channel.nio.NioEventLoopGroup;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -21,7 +22,7 @@ public class HttpTunnelServerIntegrationTest {
         testServer = UndertowHttpServerUtils.createDefaultTestServer();
         testServer.start(TARGET_PORT).join();
 
-        sut = new NettyHttpTunnelServer(NettyHttpTunnelServer.createServer(NettyHttpTunnelServer.tunnelInitializer()));
+        sut = new NettyHttpTunnelServer(NettyHttpTunnelServer.createServer(NettyHttpTunnelServer.tunnelInitializer(), new NioEventLoopGroup()));
         sut.bind(PROXY_PORT).start().join();
 
         testClient = JdkHttpClientUtils.createDefaultTestClient(PROXY_PORT);

@@ -2,6 +2,9 @@ package mezlogo.mid.netty;
 
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpObject;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import mezlogo.mid.api.model.BufferedPublisher;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -19,6 +22,8 @@ import static org.mockito.Mockito.when;
 
 public class HttpTunnelHandlerTest {
     NettyNetworkClient client;
+
+    HttpTunnelHandlerFactory factory;
 
     @Test
     void when_uri_does_not_contain_HOST_return_400() {
@@ -57,20 +62,35 @@ public class HttpTunnelHandlerTest {
     }
 
     @Test
-    void when_GET_requested_should_return_echo() {
+    void when_GET_requested_should_return_hello() {
+        var response = new BufferedPublisher<HttpObject>();
         template(helper -> {
-            when(client.openHttpConnection(any(), anyInt(), any())).thenReturn(CompletableFuture.failedFuture(new LightweightException("")));
-            var req = NettyTestUtils.createRequestForProxy("http://localhost:65432", "localhost", HttpMethod.GET, Optional.empty());
+            when(client.openHttpConnection(any(), anyInt(), any())).thenReturn(CompletableFuture.completedFuture(response));
+            var req = NettyTestUtils.createRequestForProxy("http://localhost:8080", "localhost", HttpMethod.GET, Optional.empty());
+            response.next(NettyTestUtils.createResponse(HttpResponseStatus.OK, Optional.of("hello")));
             var resp = helper.sendHttpRequest(req);
-            assertResp(resp, 503, "Unreachable target url: 'http://localhost:65432/'");
+            assertResp(resp, 200, "hello");
+        });
+    }
+
+    @Test
+    void when_POST_requested_should_return_hello() {
+        var response = new BufferedPublisher<HttpObject>();
+        template(helper -> {
+            when(client.openHttpConnection(any(), anyInt(), any())).thenReturn(CompletableFuture.completedFuture(response));
+            var req = NettyTestUtils.createRequestForProxy("http://localhost:8080", "localhost", HttpMethod.POST, Optional.of("this is request"));
+            response.next(NettyTestUtils.createResponse(HttpResponseStatus.OK, Optional.of("hello")));
+            var resp = helper.sendHttpRequest(req);
+            assertResp(resp, 200, "hello");
         });
     }
 
     void template(Consumer<NettyTestUtils.NettyTestAdapter> testBody) {
         client = mock(NettyNetworkClient.class);
+        factory = mock(HttpTunnelHandlerFactory.class);
 
         var channel = NettyTestUtils.createEmbeddedHttpServer();
-        channel.pipeline().addLast("http-tunnel-handler", new HttpTunnelHandler(client, null));
+        channel.pipeline().addLast("http-tunnel-handler", new HttpTunnelHandler(client, factory));
         var testAdapter = new NettyTestUtils.LocalNettyTestAdapter(channel);
         testBody.accept(testAdapter);
     }

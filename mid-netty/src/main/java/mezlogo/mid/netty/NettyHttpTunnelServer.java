@@ -1,11 +1,13 @@
 package mezlogo.mid.netty;
 
+import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.HttpServerCodec;
 import mezlogo.mid.api.HttpTunnelServer;
 
@@ -28,14 +30,23 @@ public class NettyHttpTunnelServer extends HttpTunnelServer {
         };
     }
 
-    public static ServerBootstrap createServer(ChannelInitializer<Channel> handlers) {
+    public static ServerBootstrap createServer(ChannelInitializer<Channel> handlers, NioEventLoopGroup group) {
         ServerBootstrap serverBootstrap = new ServerBootstrap()
                 .channel(NioServerSocketChannel.class)
-                .group(new NioEventLoopGroup())
+                .group(group)
                 .childHandler(handlers)
                 .option(ChannelOption.SO_BACKLOG, 128)
                 .childOption(ChannelOption.SO_KEEPALIVE, true);
         return serverBootstrap;
+    }
+
+    public static Bootstrap createClient(ChannelInitializer<Channel> handlers, NioEventLoopGroup group) {
+        Bootstrap clientBootstrap = new Bootstrap()
+                .channel(NioSocketChannel.class)
+                .group(group)
+                .handler(handlers)
+                .option(ChannelOption.SO_KEEPALIVE, true);
+        return clientBootstrap;
     }
 
     @Override

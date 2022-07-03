@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.concurrent.Flow;
 
 public class BufferedPublisher<T> implements FlowPublisher<T> {
-    public final List<T> buffer = new ArrayList<>();
+    private final List<T> buffer = new ArrayList<>();
     private boolean isCompleted = false;
     private Flow.Subscriber<? super T> subscriber;
 
@@ -36,6 +36,14 @@ public class BufferedPublisher<T> implements FlowPublisher<T> {
         if (isCompleted) {
             subscriber.onComplete();
         }
+    }
+
+    public List<T> getBuffer() {
+        return new ArrayList<>(buffer);
+    }
+
+    public boolean getIsCompleted() {
+        return isCompleted;
     }
 }
 

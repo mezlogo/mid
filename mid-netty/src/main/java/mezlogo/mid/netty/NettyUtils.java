@@ -18,15 +18,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 public class NettyUtils {
-    public static ChannelFutureListener toCallback(Consumer<ChannelFuture> callback) {
-        return new ChannelFutureListener() {
-            @Override
-            public void operationComplete(ChannelFuture future) throws Exception {
-                callback.accept(future);
-            }
-        };
-    }
-
     public static ChannelFutureListener twoCallbacks(Consumer<Channel> ok, Consumer<Throwable> error) {
         return new ChannelFutureListener() {
             @Override

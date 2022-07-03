@@ -39,10 +39,13 @@ public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
 
             var toTargetPublisher = new BufferedPublisher<HttpObject>();
             CompletableFuture<Flow.Publisher<HttpObject>> futureResponse = client.openHttpConnection(uri.getHost(), uri.getPort(), toTargetPublisher);
-            futureResponse.exceptionally(err -> {
-                writeAndClose(ctx, "Unreachable target url: '" + request.uri() + "'", HttpResponseStatus.SERVICE_UNAVAILABLE);
-                return null;
-            });
+            futureResponse.thenAccept(resp -> resp.subscribe(new NettyResponseSubscriber(ctx)))
+                    .exceptionally(err -> {
+                        writeAndClose(ctx, "Unreachable target url: '" + request.uri() + "'", HttpResponseStatus.SERVICE_UNAVAILABLE);
+                        return null;
+                    });
+
+//            HttpRequestInboundProxy proxyHandler = factory.createHttpRequestInboundProxy(toTargetPublisher);
         }
     }
 }
