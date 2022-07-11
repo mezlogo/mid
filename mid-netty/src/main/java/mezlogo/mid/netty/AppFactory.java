@@ -1,13 +1,17 @@
 package mezlogo.mid.netty;
 
-import io.netty.channel.ChannelHandlerContext;
-import mezlogo.mid.netty.handler.HttpTunnelHandler;
+import io.netty.handler.codec.http.HttpObject;
+import mezlogo.mid.api.model.BufferedPublisher;
+import mezlogo.mid.netty.handler.HttpProxyHandlerToPublisher;
+
+import java.util.concurrent.Flow;
 
 public class AppFactory {
-    public HttpTunnelHandler createTunnelHandler() {
-        return null;
+    public HttpProxyHandlerToPublisher createProxyHandler(Flow.Publisher<HttpObject> requestPublisher) {
+        return new HttpProxyHandlerToPublisher(requestPublisher);
     }
 
-    public void makeItProxy(ChannelHandlerContext ctx) {
+    public BufferedPublisher<HttpObject> createPublisher() {
+        return new BufferedPublisher<>();
     }
 }

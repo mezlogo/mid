@@ -6,6 +6,8 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import mezlogo.mid.api.model.SubscriberToCallback;
+import mezlogo.mid.netty.AppFactory;
 import mezlogo.mid.netty.NettyNetworkClient;
 import mezlogo.mid.netty.NettyUtils;
 
@@ -16,10 +18,12 @@ import java.util.function.Function;
 public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
     private final Function<String, Optional<URI>> parseProxyUri;
     private final NettyNetworkClient client;
+    private final AppFactory factory;
 
-    public HttpTunnelHandler(Function<String, Optional<URI>> parseProxyUri, NettyNetworkClient client) {
+    public HttpTunnelHandler(Function<String, Optional<URI>> parseProxyUri, NettyNetworkClient client, AppFactory factory) {
         this.parseProxyUri = parseProxyUri;
         this.client = client;
+        this.factory = factory;
     }
 
     private static void responseErrorAndClose(ChannelHandlerContext ctx, HttpResponseStatus status, String msg) {
@@ -39,8 +43,13 @@ public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
             var uri = targetUriOpt.get();
             var host = uri.getHost();
             int port = uri.getPort();
-            var future = client.openHttpConnection(host, port, null);
+            var requestPublisher = factory.createPublisher();
+            var future = client.openHttpConnection(host, port, requestPublisher);
             future.thenAccept(response -> {
+                var proxyHandler = factory.createProxyHandler(requestPublisher);
+                ctx.pipeline().replace(this, "proxy", proxyHandler);
+                var ch = ctx.channel();
+                response.subscribe(new SubscriberToCallback<>(ch::writeAndFlush, ch::close));
                 req.setUri(uri.getPath() + Optional.ofNullable(uri.getQuery()).map(it -> "?" + it).orElse(""));
                 ctx.fireChannelRead(req);
             });

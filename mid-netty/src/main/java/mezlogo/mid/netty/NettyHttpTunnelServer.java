@@ -24,7 +24,7 @@ public class NettyHttpTunnelServer extends HttpTunnelServer {
             @Override
             protected void initChannel(Channel ch) throws Exception {
                 ch.pipeline().addLast("http-server-codec", new HttpServerCodec())
-                        .addLast("http-tunnel-handler", new HttpTunnelHandler(null, null));
+                        .addLast("http-tunnel-handler", new HttpTunnelHandler(null, null, null));
             }
         };
     }

@@ -7,6 +7,7 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import mezlogo.mid.netty.AppFactory;
 import mezlogo.mid.netty.LightweightException;
 import mezlogo.mid.netty.NettyNetworkClient;
 import mezlogo.mid.netty.test.NettyTestHelpers;
@@ -42,7 +43,7 @@ class HttpTunnelHandlerTest {
         uriParser = mock(Function.class);
         client = mock(NettyNetworkClient.class);
         channel = NettyTestHelpers.createEmbeddedHttpServer();
-        channel.pipeline().addLast("http-tunnel-handler", new HttpTunnelHandler(uriParser, client));
+        channel.pipeline().addLast("http-tunnel-handler", new HttpTunnelHandler(uriParser, client, mock(AppFactory.class)));
     }
 
     @Test
@@ -79,7 +80,4 @@ class HttpTunnelHandlerTest {
         assertThat(req.uri()).isEqualTo("/greet?name=Bob");
         assertThat(req.method()).isEqualTo(HttpMethod.GET);
     }
-
-    //should_pass_through_messages_to_client
-    //should_pass_through_messages_from_client
 }
