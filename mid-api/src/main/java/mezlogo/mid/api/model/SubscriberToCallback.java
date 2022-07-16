@@ -3,7 +3,7 @@ package mezlogo.mid.api.model;
 import java.util.concurrent.Flow;
 import java.util.function.Consumer;
 
-public class SubscriberToCallback <T> implements Flow.Subscriber<T> {
+public class SubscriberToCallback<T> implements Flow.Subscriber<T> {
     private final Consumer<T> onNext;
     private final Runnable onComplete;
 

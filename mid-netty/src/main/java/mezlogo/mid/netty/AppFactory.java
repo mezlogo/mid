@@ -2,12 +2,11 @@ package mezlogo.mid.netty;
 
 import io.netty.handler.codec.http.HttpObject;
 import mezlogo.mid.api.model.BufferedPublisher;
+import mezlogo.mid.api.model.FlowPublisher;
 import mezlogo.mid.netty.handler.HttpProxyHandlerToPublisher;
 
-import java.util.concurrent.Flow;
-
 public class AppFactory {
-    public HttpProxyHandlerToPublisher createProxyHandler(Flow.Publisher<HttpObject> requestPublisher) {
+    public HttpProxyHandlerToPublisher createProxyHandler(FlowPublisher<HttpObject> requestPublisher) {
         return new HttpProxyHandlerToPublisher(requestPublisher);
     }
 

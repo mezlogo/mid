@@ -4,15 +4,14 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpObject;
+import mezlogo.mid.api.model.FlowPublisher;
 import mezlogo.mid.netty.AppFactory;
-
-import java.util.concurrent.Flow;
 
 public class HttpClientProxyChannelInit extends ChannelInitializer<SocketChannel> {
     private final AppFactory factory;
-    private final Flow.Publisher<HttpObject> responsePublisher;
+    private final FlowPublisher<HttpObject> responsePublisher;
 
-    public HttpClientProxyChannelInit(AppFactory factory, Flow.Publisher<HttpObject> responsePublisher) {
+    public HttpClientProxyChannelInit(AppFactory factory, FlowPublisher<HttpObject> responsePublisher) {
         this.factory = factory;
         this.responsePublisher = responsePublisher;
     }
