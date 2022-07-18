@@ -5,7 +5,8 @@
         </encoder>
     </appender>
 
-    <logger name="mezlogo.mid.netty.TraceHttpRequestInboundChannelHandler" level="trace"/>
+    <logger name="mezlogo.mid.netty.server" level="trace"/>
+    <logger name="mezlogo.mid.netty.client" level="trace"/>
 
     <root level="info">
         <appender-ref ref="STDOUT"/>

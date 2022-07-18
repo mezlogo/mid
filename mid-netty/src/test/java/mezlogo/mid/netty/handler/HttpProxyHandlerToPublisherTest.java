@@ -1,6 +1,7 @@
 package mezlogo.mid.netty.handler;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObject;
@@ -20,10 +21,13 @@ import org.mockito.ArgumentCaptor;
 import java.nio.charset.Charset;
 import java.util.Optional;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class HttpProxyHandlerToPublisherTest {
@@ -90,12 +94,14 @@ class HttpProxyHandlerToPublisherTest {
 
     void template_server(HttpRequest request, BiConsumer<HttpRequest, LastHttpContent> callback) {
         var ch = NettyTestHelpers.createEmbeddedHttpServer();
-        FlowPublisher publisher = mock(FlowPublisher.class);
+        FlowPublisher<HttpObject> publisher = mock(FlowPublisher.class);
         var captor = ArgumentCaptor.forClass(HttpObject.class);
-        ch.pipeline().addLast(new HttpProxyHandlerToPublisher(publisher));
+        Consumer<ChannelHandlerContext> onLast = mock(Consumer.class);
+        ch.pipeline().addLast(new HttpProxyHandlerToPublisher(publisher, onLast));
 
         ch.writeInbound(request);
 
+        verify(onLast, times(1)).accept(any());
         verify(publisher, atLeastOnce()).next(captor.capture());
         var args = captor.getAllValues();
         assertThat(args.get(0)).isInstanceOf(HttpRequest.class);

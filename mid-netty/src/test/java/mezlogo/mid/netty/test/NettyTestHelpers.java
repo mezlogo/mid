@@ -31,26 +31,6 @@ public class NettyTestHelpers {
         return new CombinedChannelDuplexHandler<>(new RequestToBytesInboundHandler(client), new BytesToResponseOutboundHandler(client));
     }
 
-    public static DefaultFullHttpRequest createConnectRequest(String url) {
-        DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.CONNECT, url);
-        request.headers().add(HTTP_HEADER_PROXY_CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-        request.headers().add(HttpHeaderNames.USER_AGENT, CURL_USER_AGENT_HEADER_VALUE);
-        request.headers().add(HttpHeaderNames.HOST, url);
-        return request;
-    }
-
-    public static DefaultFullHttpResponse createResponse(HttpResponseStatus status, Optional<String> body) {
-        var content = body.map(it -> Unpooled.copiedBuffer(it.getBytes(StandardCharsets.UTF_8))).orElseGet(() -> Unpooled.buffer(0));
-        DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, content);
-
-        if (0 < content.readableBytes()) {
-            response.headers().add(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.TEXT_PLAIN);
-            response.headers().add(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
-        }
-
-        return response;
-    }
-
     public static DefaultFullHttpRequest createRequestForProxy(String uri, String host, HttpMethod method, Optional<String> body) {
         var content = body.map(it -> Unpooled.copiedBuffer(it.getBytes(StandardCharsets.UTF_8))).orElseGet(() -> Unpooled.buffer(0));
         DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, method, uri, content);

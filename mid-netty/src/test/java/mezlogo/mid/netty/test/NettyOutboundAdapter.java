@@ -16,12 +16,12 @@ public class NettyOutboundAdapter extends ChannelOutboundHandlerAdapter {
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         channel.writeInbound(msg);
-        channel.outboundMessages().forEach(it -> {
-            if (it instanceof ByteBuf byteBuf) {
+        for(Object outbountMessage = channel.readOutbound(); outbountMessage != null; outbountMessage = channel.readOutbound()) {
+            if (outbountMessage instanceof ByteBuf byteBuf) {
                 ctx.fireChannelRead(byteBuf.retainedDuplicate());
             } else {
-                ctx.fireChannelRead(it);
+                ctx.fireChannelRead(outbountMessage);
             }
-        });
+        };
     }
 }

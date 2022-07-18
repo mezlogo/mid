@@ -1,10 +1,17 @@
 package mezlogo.mid.netty;
 
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import mezlogo.mid.api.utils.MidUtils;
+import mezlogo.mid.netty.handler.ChannelInitializerCallback;
+import mezlogo.mid.netty.handler.HttpTunnelHandler;
 import mezlogo.mid.netty.test.JdkTestClient;
 import mezlogo.mid.netty.test.UndertowTestServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,10 +24,20 @@ public class AcceptanceTest {
 
     @BeforeAll
     static void before_all() {
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
+        System.setProperty("jdk.httpclient.HttpClient.log", "all");
+        AppConfig config = new AppConfig(true, true);
+
         testClient = JdkTestClient.createTestClient("localhost", SERVER_PORT, false, PROXY_PORT);
         testServer = UndertowTestServer.createTestServer();
         testServer.start(SERVER_PORT).join();
-        mid = NettyHttpTunnelServer.createHttpTunnelServer();
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        var clientBootsrap = new Bootstrap().handler(new ChannelInitializerCallback(ch -> {
+        })).group(group).channel(NioSocketChannel.class);
+        NettyNetworkClientFunction client = new NettyNetworkClientFunction((host, port) -> NettyUtils.openChannel(clientBootsrap, host, port), config);
+        AppFactory factory = new AppFactory(config);
+        mid = new NettyHttpTunnelServer(NettyHttpTunnelServer.createServer(NettyHttpTunnelServer.tunnelInitializer(() -> new HttpTunnelHandler(MidUtils::uriParser, client, factory), factory), group));
         mid.bind(PROXY_PORT).start().join();
     }
 
@@ -53,6 +70,17 @@ public class AcceptanceTest {
     @Test
     void when_GET_echo_should_return_info_about_request() {
         var resp = testClient.get("/echo").join();
+        assertThat(resp.statusCode()).isEqualTo(200);
+        assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,false,0,null,CONTENT_LENGTH");
+    }
+
+    @Test
+    void when_GET_echo_TWICE_should_handle_keep_alive() {
+        var resp = testClient.get("/echo").join();
+        assertThat(resp.statusCode()).isEqualTo(200);
+        assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,false,0,null,CONTENT_LENGTH");
+
+        resp = testClient.get("/echo").join();
         assertThat(resp.statusCode()).isEqualTo(200);
         assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,false,0,null,CONTENT_LENGTH");
     }

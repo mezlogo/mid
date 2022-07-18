@@ -33,16 +33,12 @@ public class SyncEmbeddedClient {
     }
 
     public FullHttpResponse request(FullHttpRequest req) {
-        client.pipeline().addLast("http-aggregator", new HttpObjectAggregator(1024));
+        if (null == client.pipeline().get(HttpObjectAggregator.class)) {
+            client.pipeline().addLast("http-aggregator", new HttpObjectAggregator(1024));
+        }
         client.writeOutbound(req);
         FullHttpResponse response = client.readInbound();
         return response;
-    }
-
-    public Flow.Publisher<HttpObject> openStream() {
-        var result = new BufferedPublisher<HttpObject>();
-        client.pipeline().addLast("adapter", new HttpProxyHandlerToPublisher(result));
-        return result;
     }
 
     public EmbeddedChannel getClient() {

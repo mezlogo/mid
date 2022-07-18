@@ -1,8 +1,10 @@
 package mezlogo.mid.netty.handler;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.codec.http.HttpMessage;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -26,8 +28,8 @@ public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
         this.factory = factory;
     }
 
-    private static void responseErrorAndClose(ChannelHandlerContext ctx, HttpResponseStatus status, String msg) {
-        ctx.writeAndFlush(NettyUtils.createResponse(status, Optional.of(msg))).addListener(ChannelFutureListener.CLOSE);
+    private static void responseErrorAndClose(Channel ch, HttpResponseStatus status, String msg) {
+        ch.writeAndFlush(NettyUtils.createResponse(status, Optional.of(msg))).addListener(ChannelFutureListener.CLOSE);
     }
 
     @Override
@@ -36,7 +38,7 @@ public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
             var targetUriOpt = parseProxyUri.apply(req.uri());
 
             if (targetUriOpt.isEmpty()) {
-                responseErrorAndClose(ctx, HttpResponseStatus.BAD_REQUEST, "Tunnel can not parse uri: '" + req.uri() + "'");
+                responseErrorAndClose(ctx.channel(), HttpResponseStatus.BAD_REQUEST, "Tunnel can not parse uri: '" + req.uri() + "'");
                 return;
             }
 
@@ -45,16 +47,18 @@ public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
             int port = uri.getPort();
             var requestPublisher = factory.createPublisher();
             var future = client.openHttpConnection(host, port, requestPublisher);
+            var ch = ctx.channel();
+
+            var proxyHandler = factory.createProxyHandler(requestPublisher, () -> new HttpTunnelHandler(parseProxyUri, client, factory));
+            ctx.pipeline().replace(this, "proxy", proxyHandler);
+            req.setUri(uri.getPath() + Optional.ofNullable(uri.getQuery()).map(it -> "?" + it).orElse(""));
+            ctx.fireChannelRead(req);
+
             future.thenAccept(response -> {
-                var proxyHandler = factory.createProxyHandler(requestPublisher);
-                ctx.pipeline().replace(this, "proxy", proxyHandler);
-                var ch = ctx.channel();
                 response.subscribe(new SubscriberToCallback<>(ch::writeAndFlush, ch::close));
-                req.setUri(uri.getPath() + Optional.ofNullable(uri.getQuery()).map(it -> "?" + it).orElse(""));
-                ctx.fireChannelRead(req);
             });
             future.exceptionally(exc -> {
-                responseErrorAndClose(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "socket: '" + host + ":" + port + "' is unreachable");
+                responseErrorAndClose(ch, HttpResponseStatus.SERVICE_UNAVAILABLE, "socket: '" + host + ":" + port + "' is unreachable");
                 return null;
             });
         }
