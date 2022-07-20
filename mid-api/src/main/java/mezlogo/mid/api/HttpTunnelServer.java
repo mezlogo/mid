@@ -13,4 +13,6 @@ public abstract class HttpTunnelServer {
     }
 
     public abstract CompletableFuture<Void> start();
+
+    public abstract CompletableFuture<Void> stop();
 }

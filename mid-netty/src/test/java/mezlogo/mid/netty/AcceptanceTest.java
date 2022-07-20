@@ -35,7 +35,7 @@ public class AcceptanceTest {
         NioEventLoopGroup group = new NioEventLoopGroup();
         var clientBootsrap = new Bootstrap().handler(new ChannelInitializerCallback(ch -> {
         })).group(group).channel(NioSocketChannel.class);
-        NettyNetworkClientFunction client = new NettyNetworkClientFunction((host, port) -> NettyUtils.openChannel(clientBootsrap, host, port), config);
+        NettyNetworkClientFunction client = new NettyNetworkClientFunction((host, port) -> NettyUtils.openChannel(clientBootsrap, host, port), null);
         AppFactory factory = new AppFactory(config);
         mid = new NettyHttpTunnelServer(NettyHttpTunnelServer.createServer(NettyHttpTunnelServer.tunnelInitializer(() -> new HttpTunnelHandler(MidUtils::uriParser, client, factory), factory), group));
         mid.bind(PROXY_PORT).start().join();
@@ -44,6 +44,7 @@ public class AcceptanceTest {
     @AfterAll
     static void after_all() {
         testServer.stop().join();
+        mid.stop().join();
     }
 
     @Test

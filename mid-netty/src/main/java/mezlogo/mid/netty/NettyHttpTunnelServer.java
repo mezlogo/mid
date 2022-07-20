@@ -52,4 +52,11 @@ public class NettyHttpTunnelServer extends HttpTunnelServer {
         });
         return future;
     }
+
+    @Override
+    public CompletableFuture<Void> stop() {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        bootstrap.config().group().shutdownGracefully().addListener(it -> future.complete(null));
+        return future;
+    }
 }

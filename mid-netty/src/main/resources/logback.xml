@@ -7,6 +7,8 @@
 
     <logger name="mezlogo.mid.netty.server" level="trace"/>
     <logger name="mezlogo.mid.netty.client" level="trace"/>
+    <logger name="mezlogo.mid.netty.test.client" level="trace"/>
+    <logger name="mezlogo.mid.netty.test.server" level="trace"/>
 
     <root level="info">
         <appender-ref ref="STDOUT"/>

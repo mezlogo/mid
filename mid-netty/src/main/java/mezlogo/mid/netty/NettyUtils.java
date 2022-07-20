@@ -38,8 +38,8 @@ public interface NettyUtils {
         };
     }
 
-    static void resetHttpTunnel(ChannelHandlerContext ctx, Supplier<HttpTunnelHandler> tunnelFactory) {
-        ctx.pipeline().replace("proxy", "http-tunnel-handler", tunnelFactory.get());
+    static void resetHttpTunnel(ChannelHandlerContext ctx, AppFactory factory) {
+        ctx.pipeline().replace("proxy", "http-tunnel-handler", factory.createHttpTunnelHandler());
     }
 
     static CompletableFuture<Channel> openChannel(Bootstrap bootstrap, String host, int port) {

@@ -14,11 +14,11 @@ import java.util.function.BiFunction;
 
 public class NettyNetworkClientFunction implements NettyNetworkClient {
     private final BiFunction<String, Integer, CompletableFuture<Channel>> connectionFactory;
-    private final AppConfig config;
+    private final AppFactory factory;
 
-    public NettyNetworkClientFunction(BiFunction<String, Integer, CompletableFuture<Channel>> connectionFactory, AppConfig config) {
+    public NettyNetworkClientFunction(BiFunction<String, Integer, CompletableFuture<Channel>> connectionFactory, AppFactory factory) {
         this.connectionFactory = connectionFactory;
-        this.config = config;
+        this.factory = factory;
     }
 
     @Override
@@ -28,15 +28,8 @@ public class NettyNetworkClientFunction implements NettyNetworkClient {
         CompletableFuture<Channel> channelFuture = connectionFactory.apply(host, port);
 
         channelFuture.thenAccept(channel -> {
-            var responsePublisher = new BufferedPublisher<HttpObject>();
-
-            if (config.verboseClient()) {
-                channel.pipeline().addLast("logger", new LoggingHandler("mezlogo.mid.netty.client"));
-            }
-            channel.pipeline().addLast("http-client-codec", new HttpClientCodec())
-                    .addLast("adapter", new HttpProxyHandlerToPublisher(responsePublisher));
-
-            toTargetPublisher.subscribe(new SubscriberToCallback<>(channel::writeAndFlush, channel::close));
+            var responsePublisher = factory.initHttpClient(channel);
+            toTargetPublisher.subscribe(factory.subscribe(channel));
             future.complete(responsePublisher);
         });
         channelFuture.exceptionally(thr -> {
