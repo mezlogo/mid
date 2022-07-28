@@ -43,7 +43,7 @@ public class NettyNetworkClientFunction implements NettyNetworkClient {
         CompletableFuture<Channel> channelFuture = connectionFactory.apply(host, port);
 
         channelFuture.thenAccept(channel -> {
-            var responsePublisher = factory.initBytesClient(channel);
+            var responsePublisher = factory.initBytesClient(channel, false);
             toTargetPublisher.subscribe(factory.subscribeBytes(channel));
             future.complete(responsePublisher);
         });
@@ -54,4 +54,22 @@ public class NettyNetworkClientFunction implements NettyNetworkClient {
 
         return future;
     }
+
+    @Override
+    public CompletableFuture<Flow.Publisher<ByteBuf>> openDecryptedStreamConnection(String host, int port, Flow.Publisher<ByteBuf> toTargetPublisher) {
+        CompletableFuture<Flow.Publisher<ByteBuf>> future = new CompletableFuture<>();
+
+        CompletableFuture<Channel> channelFuture = connectionFactory.apply(host, port);
+
+        channelFuture.thenAccept(channel -> {
+            var responsePublisher = factory.initBytesClient(channel, true);
+            toTargetPublisher.subscribe(factory.subscribeBytes(channel));
+            future.complete(responsePublisher);
+        });
+        channelFuture.exceptionally(thr -> {
+            future.completeExceptionally(thr);
+            return null;
+        });
+
+        return future;    }
 }

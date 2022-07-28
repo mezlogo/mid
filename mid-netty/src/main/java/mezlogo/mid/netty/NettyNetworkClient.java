@@ -10,4 +10,6 @@ public interface NettyNetworkClient {
     CompletableFuture<Flow.Publisher<HttpObject>> openHttpConnection(String host, int port, Flow.Publisher<HttpObject> toTargetPublisher);
 
     CompletableFuture<Flow.Publisher<ByteBuf>> openStreamConnection(String host, int port, Flow.Publisher<ByteBuf> toTargetPublisher);
+
+    CompletableFuture<Flow.Publisher<ByteBuf>> openDecryptedStreamConnection(String host, int port, Flow.Publisher<ByteBuf> toTargetPublisher);
 }

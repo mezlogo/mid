@@ -17,7 +17,7 @@ keytool -genkeypair -alias ssl -keyalg RSA -keysize 2048 -dname "CN=localhost,OU
 
 keytool -importkeystore -srckeystore keystore.jks -destkeystore keystore.jks -deststoretype pkcs12
  */
-public class SslUtils {
+public class UndertowSslUtils {
 
     public static SSLContext buildSSLContext() {
         SSLContext context = null;
@@ -39,7 +39,7 @@ public class SslUtils {
     }
 
     public static KeyManager[] buildManagers() {
-        var is = SslUtils.class.getResourceAsStream("/keystore.jks");
+        var is = UndertowSslUtils.class.getResourceAsStream("/keystore.jks");
         var pass = "changeit";
         var ks = getKeyStore(is, pass);
         var km = getKeyManagers(ks, pass);

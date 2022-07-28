@@ -1,171 +1,289 @@
 package mezlogo.mid.netty.handler;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.http.DefaultFullHttpRequest;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import mezlogo.mid.api.model.BufferedPublisher;
+import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.LastHttpContent;
+import mezlogo.mid.api.model.FlowPublisher;
 import mezlogo.mid.api.model.HostAndPort;
 import mezlogo.mid.netty.AppFactory;
 import mezlogo.mid.netty.LightweightException;
 import mezlogo.mid.netty.NettyNetworkClient;
-import mezlogo.mid.netty.test.NettyTestHelpers;
+import mezlogo.mid.netty.NettyUtils;
+import mezlogo.mid.netty.test.EmbeddedAppFactory;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.stubbing.Answer;
 
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 class HttpTunnelHandlerTest {
-    EmbeddedChannel channel;
+    private static final String HOST = "testserver";
+    private static final int PORT = 9876;
+    private static final String TESTURL = "http://" + HOST + ":" + PORT;
+    public static final Answer<Void> DEFAULT_THROW_ANSWER = it -> {
+        throw new UnsupportedOperationException(it.toString());
+    };
+    EmbeddedAppFactory.EmbeddedTestClient sut;
     Function<String, Optional<URI>> uriParser;
     Function<String, Optional<HostAndPort>> socketParser;
+    Predicate<HostAndPort> isDecrypt;
     NettyNetworkClient client;
     AppFactory factory;
-    BufferedPublisher<HttpObject> requestHttpPublisher;
-    BufferedPublisher<ByteBuf> requestBytesPublisher;
+    FlowPublisher<HttpObject> requestHttpPublisher;
+    Flow.Publisher<HttpObject> responseHttpPublisher;
+    FlowPublisher<ByteBuf> requestBytesPublisher;
+    Flow.Publisher<ByteBuf> responseBytesPublisher;
 
-    static FullHttpRequest createProxyGet() {
-        DefaultFullHttpRequest result = NettyTestHelpers.createRequestForProxy("http://localhost:8080/greet?name=Bob", "localhost", HttpMethod.GET, Optional.empty());
-        return result;
+    private static FullHttpRequest get(String uri) {
+        return NettyUtils.createRequest(TESTURL + uri, HOST, HttpMethod.GET, Optional.empty());
     }
 
-    static FullHttpRequest createProxyConnect() {
-        DefaultFullHttpRequest result = NettyTestHelpers.createRequestForProxy("localhost:8080", "localhost", HttpMethod.CONNECT, Optional.empty());
-        return result;
+    private static FullHttpRequest post(String uri, String body) {
+        return NettyUtils.createRequest(TESTURL + uri, HOST, HttpMethod.POST, Optional.of(body));
+    }
+
+    private static FullHttpRequest connect() {
+        return NettyUtils.createRequest(HOST + ":" + PORT, HOST, HttpMethod.CONNECT, Optional.empty());
+    }
+
+    private static void assertResponse(FullHttpResponse actual, HttpResponseStatus expectedStatus, String expectedBody) {
+        assertThat(actual.status()).isEqualTo(expectedStatus);
+        assertThat(actual.content().toString(Charset.defaultCharset())).isEqualTo(expectedBody);
+    }
+
+    public static void main(String[] args) {
+        var m = mock(ArrayList.class);
+        doAnswer(it -> {
+            System.out.println(it);
+            return 1;
+        }).when(m).size();
+        System.out.println(m.size());
     }
 
     @BeforeEach
     void before() {
-        uriParser = mock(Function.class);
-        socketParser = mock(Function.class);
-        client = mock(NettyNetworkClient.class);
-        factory = mock(AppFactory.class);
-        channel = NettyTestHelpers.createEmbeddedHttpServer();
-        channel.pipeline().addLast("http-tunnel-handler", new HttpTunnelHandler(uriParser, socketParser, client, factory));
-        requestHttpPublisher = mock(BufferedPublisher.class);
-        requestBytesPublisher = mock(BufferedPublisher.class);
+        uriParser = mock(Function.class, DEFAULT_THROW_ANSWER);
+        socketParser = mock(Function.class, DEFAULT_THROW_ANSWER);
+        isDecrypt = mock(Predicate.class, DEFAULT_THROW_ANSWER);
+        client = mock(NettyNetworkClient.class, DEFAULT_THROW_ANSWER);
+        factory = mock(AppFactory.class, DEFAULT_THROW_ANSWER);
 
-        when(factory.createHttpPublisher()).thenReturn(requestHttpPublisher);
-        when(factory.createBytebufPublisher()).thenReturn(requestBytesPublisher);
-        when(factory.createServerProxyHandler(any())).thenReturn(new PublishHttpObjectHandler(requestHttpPublisher));
-        when(factory.createServerProxyBytesHandler(any())).thenReturn(new PublishBytebufHandler(requestBytesPublisher));
+        requestHttpPublisher = mock(FlowPublisher.class);
+        requestBytesPublisher = mock(FlowPublisher.class);
+        responseBytesPublisher = mock(Flow.Publisher.class);
+        responseHttpPublisher = mock(Flow.Publisher.class);
+
+        doReturn(requestHttpPublisher).when(factory).createHttpPublisher();
+        doReturn(requestBytesPublisher).when(factory).createBytebufPublisher();
+        doReturn(new PublishHttpObjectHandler(requestHttpPublisher)).when(factory).createServerProxyHandler(any());
+        doReturn(new PublishBytebufHandler(requestBytesPublisher)).when(factory).createServerProxyBytesHandler(any());
+        doAnswer(it -> {
+            var channel = (Channel) it.getArgument(0);
+            channel.pipeline().replace(HttpTunnelHandler.class, "http-server-publisher-handler", new DirectPassMessage(reqObj -> {
+                if (reqObj instanceof HttpObject httpObject) {
+                    requestHttpPublisher.next(httpObject);
+                }
+            }));
+            return null;
+        }).when(factory).turnHttpServerToHttpProxy(any(), any());
+        doAnswer(it -> {
+            var channel = (Channel) it.getArgument(0);
+            channel.pipeline().remove(HttpServerCodec.class);
+            channel.pipeline().replace(HttpTunnelHandler.class, "bytes-server-publisher-handler", new DirectPassMessage(reqObj -> {
+                if (reqObj instanceof ByteBuf buf) {
+                    requestBytesPublisher.next(buf);
+                }
+            }));
+            return null;
+        }).when(factory).turnHttpServerToRawBytes(any(), anyBoolean(), any());
+
+        sut = EmbeddedAppFactory.createHttpTestClientForUnitTesting(() -> new HttpTunnelHandler(uriParser, socketParser, isDecrypt, client, factory));
     }
 
-    @Test
-    void on_GET_when_uri_is_malformed_should_return_400() {
-        when(uriParser.apply(anyString())).thenReturn(Optional.empty());
+    public static class DirectPassMessage extends ChannelInboundHandlerAdapter {
+        private final Consumer<Object> callback;
 
-        channel.writeInbound(createProxyGet());
-        FullHttpResponse actual = channel.readOutbound();
+        public DirectPassMessage(Consumer<Object> callback) {
+            this.callback = callback;
+        }
 
-        assertThat(actual.status()).isEqualTo(HttpResponseStatus.BAD_REQUEST);
-        assertThat(actual.content().toString(Charset.defaultCharset())).isEqualTo("Tunnel can not parse uri: 'http://localhost:8080/greet?name=Bob'");
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+            callback.accept(msg);
+        }
     }
 
-    @Test
-    void on_CONNECT_when_uri_is_malformed_should_return_400() {
-        when(socketParser.apply(anyString())).thenReturn(Optional.empty());
+    @Nested
+    @DisplayName("pass bytes to publisher on correct CONNECT method request")
+    class CorrectCasesForCONNECTTest {
+        @Test
+        void when_encrypted_CONNECT_should_pass_everything_to_publisher() {
+            doReturn(Optional.of(new HostAndPort(HOST, PORT))).when(socketParser).apply(anyString());
+            doReturn(true).when(isDecrypt).test(any());
+            doReturn(CompletableFuture.completedFuture(responseBytesPublisher)).when(client).openDecryptedStreamConnection(anyString(), anyInt(), any());
 
-        channel.writeInbound(createProxyConnect());
-        FullHttpResponse actual = channel.readOutbound();
+            var actual = sut.sendRequest(connect()).join();
+            assertThat(actual.status()).isEqualByComparingTo(HttpResponseStatus.OK);
 
-        assertThat(actual.status()).isEqualTo(HttpResponseStatus.BAD_REQUEST);
-        assertThat(actual.content().toString(Charset.defaultCharset())).isEqualTo("Tunnel can not parse uri: 'localhost:8080'");
+            sut.turnToTcp();
+
+            sut.sendString("Hello, server!");
+
+            var bytesCapture = ArgumentCaptor.forClass(ByteBuf.class);
+            verify(requestBytesPublisher, times(1)).next(bytesCapture.capture());
+            var captured = bytesCapture.getAllValues();
+
+            var buf = captured.get(0);
+            assertThat(buf.toString(StandardCharsets.UTF_8)).isEqualTo("Hello, server!");
+        }
+        @Test
+        void when_decrypted_CONNECT_should_pass_everything_to_publisher() {
+            doReturn(Optional.of(new HostAndPort(HOST, PORT))).when(socketParser).apply(anyString());
+            doReturn(false).when(isDecrypt).test(any());
+            doReturn(CompletableFuture.completedFuture(responseBytesPublisher)).when(client).openStreamConnection(anyString(), anyInt(), any());
+
+            var actual = sut.sendRequest(connect()).join();
+            assertThat(actual.status()).isEqualByComparingTo(HttpResponseStatus.OK);
+
+            sut.turnToTcp();
+
+            sut.sendString("Hello, server!");
+
+            var bytesCapture = ArgumentCaptor.forClass(ByteBuf.class);
+            verify(requestBytesPublisher, times(1)).next(bytesCapture.capture());
+            var captured = bytesCapture.getAllValues();
+
+            var buf = captured.get(0);
+            assertThat(buf.toString(StandardCharsets.UTF_8)).isEqualTo("Hello, server!");
+        }
+    }
+    @Nested
+    @DisplayName("pass http objects to publisher on correct plain HTTP request")
+    class CorrectCasesForPlainHttpTest {
+        @Test
+        void when_plain_GET_should_pass_everything_to_publisher() {
+            doReturn(Optional.of(URI.create(TESTURL + "/hello"))).when(uriParser).apply(anyString());
+            doReturn(CompletableFuture.completedFuture(responseHttpPublisher)).when(client).openHttpConnection(anyString(), anyInt(), any());
+
+            sut.sendRequest(get("/hello"));
+
+            var httpObjectCaptor = ArgumentCaptor.forClass(HttpObject.class);
+            verify(requestHttpPublisher, times(2)).next(httpObjectCaptor.capture());
+            var captured = httpObjectCaptor.getAllValues();
+            assertThat(captured.get(0)).isInstanceOf(HttpRequest.class);
+            assertThat(captured.get(1)).isInstanceOf(LastHttpContent.class);
+
+            HttpRequest req = (HttpRequest) captured.get(0);
+            assertThat(req.method()).isEqualByComparingTo(HttpMethod.GET);
+            assertThat(req.uri()).isEqualTo("/hello");
+
+            LastHttpContent last = (LastHttpContent) captured.get(1);
+            assertThat(last.content().readableBytes()).isZero();
+        }
+
+        @Test
+        void when_plain_POST_should_pass_everything_to_publisher() {
+            doReturn(Optional.of(URI.create(TESTURL + "/hello"))).when(uriParser).apply(anyString());
+            doReturn(CompletableFuture.completedFuture(responseHttpPublisher)).when(client).openHttpConnection(anyString(), anyInt(), any());
+
+            sut.sendRequest(post("/hello", "Hello, server!"));
+
+            var httpObjectCaptor = ArgumentCaptor.forClass(HttpObject.class);
+            verify(requestHttpPublisher, times(2)).next(httpObjectCaptor.capture());
+            var captured = httpObjectCaptor.getAllValues();
+            assertThat(captured.get(0)).isInstanceOf(HttpRequest.class);
+            assertThat(captured.get(1)).isInstanceOf(LastHttpContent.class);
+
+            HttpRequest req = (HttpRequest) captured.get(0);
+            assertThat(req.method()).isEqualByComparingTo(HttpMethod.POST);
+            assertThat(req.uri()).isEqualTo("/hello");
+
+            LastHttpContent last = (LastHttpContent) captured.get(1);
+            assertThat(last.content().toString(StandardCharsets.UTF_8)).isEqualTo("Hello, server!");
+        }
     }
 
-    @Test
-    void on_CONNECT_when_target_unreachable_should_return_503() {
-        when(socketParser.apply(anyString())).thenReturn(Optional.of(new HostAndPort("unreached", 80)));
-        when(client.openStreamConnection(anyString(), anyInt(), any())).thenReturn(CompletableFuture.failedFuture(new LightweightException("")));
+    @Nested
+    @DisplayName("error cases")
+    class ErrorHttpResponsesTest {
+        @Test
+        void when_bad_uri_for_GET_should_return_400() {
+            doReturn(Optional.empty()).when(uriParser).apply(anyString());
+            var actual = sut.sendRequest(get("/")).join();
+            assertResponse(actual, HttpResponseStatus.BAD_REQUEST, "Tunnel can not parse uri: 'http://testserver:9876/'");
+        }
 
-        channel.writeInbound(createProxyConnect());
-        FullHttpResponse actual = channel.readOutbound();
+        @Test
+        void when_bad_uri_for_CONNECT_should_return_400() {
+            doReturn(Optional.empty()).when(socketParser).apply(anyString());
+            var actual = sut.sendRequest(connect()).join();
+            assertResponse(actual, HttpResponseStatus.BAD_REQUEST, "Tunnel can not parse uri: 'testserver:9876'");
+        }
 
-        assertThat(actual.status()).isEqualTo(HttpResponseStatus.SERVICE_UNAVAILABLE);
-        assertThat(actual.content().toString(Charset.defaultCharset())).isEqualTo("socket: 'unreached:80' is unreachable");
-    }
+        @Test
+        void when_target_unreachable_for_ENCRYPTED_CONNECT_should_return_503() {
+            doReturn(Optional.of(new HostAndPort(HOST, PORT))).when(socketParser).apply(anyString());
+            doReturn(requestBytesPublisher).when(factory).createBytebufPublisher();
+            doReturn(false).when(isDecrypt).test(any());
+            doReturn(CompletableFuture.failedFuture(new LightweightException("can not connect to target"))).when(client).openStreamConnection(anyString(), anyInt(), any());
 
-    @Test
-    void on_GET_when_target_unreachable_should_return_503() {
-        when(uriParser.apply(anyString())).thenReturn(Optional.of(URI.create("http://localhost:8080/greet?name=Bob")));
-        when(client.openHttpConnection(anyString(), anyInt(), any())).thenReturn(CompletableFuture.failedFuture(new LightweightException("")));
+            var actual = sut.sendRequest(connect()).join();
+            assertResponse(actual, HttpResponseStatus.SERVICE_UNAVAILABLE, "socket: 'testserver:9876' is unreachable");
+        }
 
-        channel.writeInbound(createProxyGet());
-        FullHttpResponse actual = channel.readOutbound();
+        @Test
+        void when_target_unreachable_for_DECRYPTED_CONNECT_should_return_503() {
+            doReturn(Optional.of(new HostAndPort(HOST, PORT))).when(socketParser).apply(anyString());
+            doReturn(requestBytesPublisher).when(factory).createBytebufPublisher();
+            doReturn(true).when(isDecrypt).test(any());
+            doReturn(CompletableFuture.failedFuture(new LightweightException("can not connect to target"))).when(client).openDecryptedStreamConnection(anyString(), anyInt(), any());
 
-        assertThat(actual.status()).isEqualTo(HttpResponseStatus.SERVICE_UNAVAILABLE);
-        assertThat(actual.content().toString(Charset.defaultCharset())).isEqualTo("socket: 'localhost:8080' is unreachable");
-    }
+            var actual = sut.sendRequest(connect()).join();
+            assertResponse(actual, HttpResponseStatus.SERVICE_UNAVAILABLE, "socket: 'testserver:9876' is unreachable");
+        }
 
-    @Test
-    void on_CONNECT_when_request_is_ok_should_pass_to_client() {
-        when(socketParser.apply(anyString())).thenReturn(Optional.of(new HostAndPort("reachable", 443)));
-        Flow.Publisher<ByteBuf> responsePublisher = mock(Flow.Publisher.class);
-        when(client.openStreamConnection(anyString(), anyInt(), any())).thenReturn(CompletableFuture.completedFuture(responsePublisher));
+        @Test
+        void when_target_unreachable_for_GET_should_return_503() {
+            doReturn(Optional.of(URI.create(TESTURL))).when(uriParser).apply(anyString());
+            doReturn(requestHttpPublisher).when(factory).createHttpPublisher();
+            doReturn(CompletableFuture.failedFuture(new LightweightException("can not connect to target"))).when(client).openHttpConnection(anyString(), anyInt(), any());
 
-        channel.writeInbound(createProxyConnect());
-        FullHttpResponse actual = channel.readOutbound();
+            var actual = sut.sendRequest(get("/hello")).join();
+            assertResponse(actual, HttpResponseStatus.SERVICE_UNAVAILABLE, "socket: 'testserver:9876' is unreachable");
+        }
 
-        assertThat(actual.status()).isEqualTo(HttpResponseStatus.OK);
-        assertThat(actual.content().readableBytes()).isZero();
-
-        ByteBuf originalSent = Unpooled.copiedBuffer("hello".getBytes(StandardCharsets.UTF_8));
-        channel.writeInbound(originalSent);
-        var captor = ArgumentCaptor.forClass(ByteBuf.class);
-        verify(requestBytesPublisher, times(1)).next(captor.capture());
-        var passedBuffer = captor.getValue();
-        assertThat(passedBuffer).isNotSameAs(originalSent);
-        assertThat(passedBuffer.toString(StandardCharsets.UTF_8)).isEqualTo("hello");
-    }
-
-    @Test
-    void on_GET_when_request_is_ok_should_fire_request_up() {
-        when(uriParser.apply(anyString())).thenReturn(Optional.of(URI.create("http://localhost:8080/greet?name=Bob")));
-        when(client.openHttpConnection(anyString(), anyInt(), any())).thenReturn(CompletableFuture.completedFuture(mock(Flow.Publisher.class)));
-
-        var captor = ArgumentCaptor.forClass(HttpObject.class);
-        channel.writeInbound(createProxyGet());
-        verify(requestHttpPublisher, atLeastOnce()).next(captor.capture());
-
-        HttpObject value = captor.getAllValues().get(0);
-        assertThat(value).isInstanceOf(HttpRequest.class);
-
-        var req = (HttpRequest) value;
-        assertThat(req.uri()).isEqualTo("/greet?name=Bob");
-        assertThat(req.method()).isEqualTo(HttpMethod.GET);
-    }
-
-    @Test
-    void when_request_does_not_contain_port_should_use_default() {
-        when(uriParser.apply(anyString())).thenReturn(Optional.of(URI.create("http://localhost/greet?name=Bob")));
-        when(client.openHttpConnection(anyString(), anyInt(), any())).thenReturn(CompletableFuture.completedFuture(mock(Flow.Publisher.class)));
-
-        channel.writeInbound(createProxyGet());
-
-        verify(client, times(1)).openHttpConnection(eq("localhost"), eq(80), any());
     }
 }

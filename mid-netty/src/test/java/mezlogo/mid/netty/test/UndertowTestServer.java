@@ -26,7 +26,7 @@ public class UndertowTestServer {
 
     public static SSLContext getSslContext() {
         if (null == sslContext) {
-            sslContext = SslUtils.buildSSLContext();
+            sslContext = UndertowSslUtils.buildSSLContext();
         }
         return sslContext;
     }

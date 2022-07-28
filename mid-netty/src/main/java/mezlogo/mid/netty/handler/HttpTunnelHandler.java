@@ -8,7 +8,6 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpServerCodec;
 import mezlogo.mid.api.model.HostAndPort;
 import mezlogo.mid.netty.AppFactory;
 import mezlogo.mid.netty.NettyNetworkClient;
@@ -19,17 +18,20 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
     private final static Logger logger = LoggerFactory.getLogger(HttpTunnelHandler.class);
     private final Function<String, Optional<URI>> parseProxyUri;
     private final Function<String, Optional<HostAndPort>> parseProxySocket;
+    private final Predicate<HostAndPort> isDecrypt;
     private final NettyNetworkClient client;
     private final AppFactory factory;
 
-    public HttpTunnelHandler(Function<String, Optional<URI>> parseProxyUri, Function<String, Optional<HostAndPort>> parseProxySocket, NettyNetworkClient client, AppFactory factory) {
+    public HttpTunnelHandler(Function<String, Optional<URI>> parseProxyUri, Function<String, Optional<HostAndPort>> parseProxySocket, Predicate<HostAndPort> isDecrypt, NettyNetworkClient client, AppFactory factory) {
         this.parseProxyUri = parseProxyUri;
         this.parseProxySocket = parseProxySocket;
+        this.isDecrypt = isDecrypt;
         this.client = client;
         this.factory = factory;
     }
@@ -43,33 +45,37 @@ public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
     protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) {
         if (msg instanceof HttpRequest req) {
             if (HttpMethod.CONNECT.equals(req.method())) {
-                var hostAndPort = parseProxySocket.apply(req.uri());
+                var hostAndPortOption = parseProxySocket.apply(req.uri());
 
-                if (hostAndPort.isEmpty()) {
+                if (hostAndPortOption.isEmpty()) {
                     responseErrorAndClose(ctx.channel(), HttpResponseStatus.BAD_REQUEST, "Tunnel can not parse uri: '" + req.uri() + "'");
                     return;
                 }
 
                 var ch = ctx.channel();
-                logger.info("tunneltries to open connection. uri: '{}', ch: '{}'", hostAndPort.get(), ch);
+                HostAndPort hostAndPort = hostAndPortOption.get();
+                logger.info("tunneltries to open connection. uri: '{}', ch: '{}'", hostAndPort, ch);
 
                 var requestPublisher = factory.createBytebufPublisher();
-                var future = client.openStreamConnection(hostAndPort.get().host(), hostAndPort.get().port(), requestPublisher);
+                boolean useDecryptor = isDecrypt.test(hostAndPort);
+
+                var future = (useDecryptor)
+                        ? client.openDecryptedStreamConnection(hostAndPort.host(), hostAndPort.port(), requestPublisher)
+                        : client.openStreamConnection(hostAndPort.host(), hostAndPort.port(), requestPublisher);
+
                 future.thenAccept(response -> {
-                    logger.info("proxy raw client established connection. uri: '{}', ch: '{}'", hostAndPort.get(), ch);
+                    logger.info("proxy raw client established connection. uri: '{}', ch: '{}'", hostAndPort, ch);
+
                     ctx.writeAndFlush(NettyUtils.createResponse(HttpResponseStatus.OK, Optional.empty()))
                             .addListener(NettyUtils.twoCallbacks(
-                                    channel -> {
-                                        channel.pipeline().remove(HttpServerCodec.class);
-                                    },
+                                    channel -> factory.turnHttpServerToRawBytes(channel, useDecryptor, requestPublisher),
                                     exc -> responseErrorAndClose(ch, HttpResponseStatus.BAD_REQUEST, exc.toString())));
-                    var newHandler = factory.createServerProxyBytesHandler(requestPublisher);
-                    ctx.pipeline().replace(this, "bytes-server-publisher-handler", newHandler);
+
                     response.subscribe(factory.subscribeBytes(ch));
                 });
                 future.exceptionally(exc -> {
-                    logger.info("proxy client can not established connection. uri: '{}', ch: '{}'", hostAndPort, ch);
-                    responseErrorAndClose(ch, HttpResponseStatus.SERVICE_UNAVAILABLE, "socket: '" + hostAndPort.get().host() + ":" + hostAndPort.get().port() + "' is unreachable");
+                    logger.info("proxy client can not established connection. uri: '{}', ch: '{}'", hostAndPortOption, ch);
+                    responseErrorAndClose(ch, HttpResponseStatus.SERVICE_UNAVAILABLE, "socket: '" + hostAndPort.host() + ":" + hostAndPort.port() + "' is unreachable");
                     return null;
                 });
             } else {
@@ -87,8 +93,7 @@ public class HttpTunnelHandler extends SimpleChannelInboundHandler<HttpObject> {
                 var future = client.openHttpConnection(host, port, requestPublisher);
                 var ch = ctx.channel();
 
-                var proxyHandler = factory.createServerProxyHandler(requestPublisher);
-                ctx.pipeline().replace(this, "http-server-publisher-handler", proxyHandler);
+                factory.turnHttpServerToHttpProxy(ch, requestPublisher);
                 req.setUri(uri.getPath() + Optional.ofNullable(uri.getQuery()).map(it -> "?" + it).orElse(""));
                 ctx.fireChannelRead(req);
 

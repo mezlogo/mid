@@ -18,6 +18,7 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.SslContext;
 import mezlogo.mid.api.utils.MidUtils;
 import mezlogo.mid.netty.AppConfig;
 import mezlogo.mid.netty.AppFactory;
@@ -45,6 +46,13 @@ public class EmbeddedAppFactory extends AppFactory {
     public EmbeddedAppFactory(AppConfig config, boolean throwOnBootstrap) {
         super(config);
         this.throwOnBootstrap = throwOnBootstrap;
+    }
+
+    public static EmbeddedTestClient createHttpTestClientForUnitTesting(Supplier<ChannelHandler> sut) {
+        var testClient = new NamedEmbeddedChannel("test-client", "mid-tunnel-unit-test", new HttpClientCodec(), new HttpObjectAggregator(1024));
+        var testServer = new NamedEmbeddedChannel("test-client", "mid-tunnel-unit-test", new OutboundBytebufHandlerAdapter(testClient), new HttpServerCodec(), sut.get());
+        testClient.pipeline().addFirst(new OutboundBytebufHandlerAdapter(testServer));
+        return new EmbeddedTestClient(testClient);
     }
 
     public ScheduledExecutorService getExecutor() {
@@ -76,7 +84,7 @@ public class EmbeddedAppFactory extends AppFactory {
 
     @Override
     public HttpTunnelHandler createHttpTunnelHandler() {
-        return new HttpTunnelHandler(MidUtils::uriParser, MidUtils::socketParser, clientSupplier.get(), this);
+        return new HttpTunnelHandler(MidUtils::uriParser, MidUtils::socketParser, getIsDecrypt(), clientSupplier.get(), this);
     }
 
     @Override
@@ -87,13 +95,16 @@ public class EmbeddedAppFactory extends AppFactory {
         return super.getGroup();
     }
 
-    public EmbeddedTestClient createTestClient(InitPipeline initTestServer) {
+    public EmbeddedTestClient createTestClient(InitPipeline initTestServer, boolean useSsl) {
         // 4. channel test-server: [adapter(mid-client) | logger | http-server | http-aggregator | to-function(req -> resp)]
         // 3. channel mid-client : [adapter(test-server)| logger | http-client | publisher(response-publisher)]
         // 2. channel mid-server : [adapter(test-client)| logger | http-server | http-tunnel(factory)]
         // 1. channel test-client: [adapter(mid-server) | logger | http-client | http-aggregator | to-future(resp)]
         Supplier<Channel> createTestServerForMidClient = () -> {
             var testServer = new NamedEmbeddedChannel("mid-client", "test-server", (ChannelHandler) null);
+            if (useSsl) {
+                testServer.pipeline().addLast("ssl-test-server", getServerSslContext().newHandler(testServer.alloc()));
+            }
             initTestServer.init(testServer.pipeline());
 
             var midClient = new NamedEmbeddedChannel("mid-client", "test-server", new OutboundBytebufHandlerAdapter(testServer));
@@ -120,7 +131,7 @@ public class EmbeddedAppFactory extends AppFactory {
         );
         midServer.pipeline().addFirst(new OutboundBytebufHandlerAdapter(testClient));
 
-        return new EmbeddedTestClient(testClient);
+        return new EmbeddedTestClient(testClient, this::getClientSslContext);
     }
 
     public InitPipeline initTestTcpServerChannel(Function<String, String> handler) {
@@ -145,11 +156,20 @@ public class EmbeddedAppFactory extends AppFactory {
 
     public static class EmbeddedTestClient {
         private final EmbeddedChannel channel;
+        private final Supplier<SslContext> sslContextSupplier;
         private State state = State.HTTP_CLIENT;
 
-        public EmbeddedTestClient(EmbeddedChannel testClient) {
+        public EmbeddedTestClient(EmbeddedChannel testClient, Supplier<SslContext> sslContextSupplier) {
             this.channel = testClient;
+            this.sslContextSupplier = sslContextSupplier;
         }
+
+        public EmbeddedTestClient(EmbeddedChannel testClient) {
+            this(testClient, () -> {
+                throw new UnsupportedOperationException();
+            });
+        }
+
 
         public CompletableFuture<FullHttpResponse> sendRequest(FullHttpRequest request) {
             if (State.HTTP_CLIENT != this.state) {
@@ -171,6 +191,10 @@ public class EmbeddedAppFactory extends AppFactory {
         }
 
         public void turnToTcp() {
+            turnToTcp(false);
+        }
+
+        public void turnToTcp(boolean useSsl) {
             if (State.HTTP_CLIENT != this.state) {
                 throw new IllegalStateException("expected to be in http mode");
             }
@@ -179,6 +203,9 @@ public class EmbeddedAppFactory extends AppFactory {
             ChannelPipeline pipeline = channel.pipeline();
             pipeline.remove(HttpClientCodec.class);
             pipeline.remove(HttpObjectAggregator.class);
+            if (useSsl) {
+                pipeline.addLast("ssl-client", sslContextSupplier.get().newHandler(channel.alloc()));
+            }
             pipeline.addLast(new CombinedChannelDuplexHandler<>(new StringDecoder(), new StringEncoder()));
         }
 

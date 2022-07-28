@@ -14,7 +14,15 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http2.Http2SecurityUtil;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.ssl.SupportedCipherSuiteFilter;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import mezlogo.mid.utils.SslFactory;
 
+import javax.net.ssl.SSLException;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -83,4 +91,25 @@ public interface NettyUtils {
         return response;
     }
 
+    static SslContext serverSsl() {
+        try {
+            var managers = SslFactory.buildManagers();
+            return SslContextBuilder.forServer(managers[0])
+                    .sslProvider(SslProvider.JDK)
+                    .ciphers(Http2SecurityUtil.CIPHERS, SupportedCipherSuiteFilter.INSTANCE)
+                    .build();
+        } catch (SSLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static SslContext clientSsl() {
+        try {
+            return SslContextBuilder.forClient()
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                    .build();
+        } catch (SSLException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

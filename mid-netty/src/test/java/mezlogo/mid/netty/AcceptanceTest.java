@@ -1,5 +1,7 @@
 package mezlogo.mid.netty;
 
+import mezlogo.mid.api.model.HostAndPort;
+import mezlogo.mid.api.utils.MidUtils;
 import mezlogo.mid.netty.test.JdkTestClient;
 import mezlogo.mid.netty.test.UndertowTestServer;
 import org.junit.jupiter.api.AfterAll;
@@ -9,14 +11,18 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
+import java.util.Arrays;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class AcceptanceTest {
+    public static final int PROXY_PORT = 54320;
     public static final int SERVER_HTTP_PORT = 54321;
-    public static final int SERVER_HTTPS_PORT = 54320;
-    public static final int PROXY_PORT = 54322;
+    public static final int SERVER_HTTPS_PORT = 54322;
+    public static final int SERVER_HTTPS_PORT_FOR_DECRYPT = 54323;
     static JdkTestClient httpTestClient;
     static JdkTestClient httpsTestClient;
+    static JdkTestClient httpsTestClientForDecrypt;
     static UndertowTestServer testServer;
     static NettyHttpTunnelServer mid;
 
@@ -28,11 +34,17 @@ public class AcceptanceTest {
 
         httpTestClient = JdkTestClient.createTestClient("localhost", SERVER_HTTP_PORT, false, PROXY_PORT);
         httpsTestClient = JdkTestClient.createTestClient("localhost", SERVER_HTTPS_PORT, true, PROXY_PORT);
+        httpsTestClientForDecrypt = JdkTestClient.createTestClient("localhost", SERVER_HTTPS_PORT_FOR_DECRYPT, true, PROXY_PORT);
 
         testServer = UndertowTestServer.createTestServer();
-        testServer.start(new UndertowTestServer.PortAndSll(SERVER_HTTP_PORT, false), new UndertowTestServer.PortAndSll(SERVER_HTTPS_PORT, true)).join();
+        testServer.start(
+                new UndertowTestServer.PortAndSll(SERVER_HTTP_PORT, false),
+                new UndertowTestServer.PortAndSll(SERVER_HTTPS_PORT, true),
+                new UndertowTestServer.PortAndSll(SERVER_HTTPS_PORT_FOR_DECRYPT, true)
+        ).join();
 
         var factory = new AppFactory(new AppConfig(true, true));
+        factory.setSocketsToDecrypt(MidUtils.isDecrypt(Arrays.asList(new HostAndPort("localhost", SERVER_HTTPS_PORT_FOR_DECRYPT))));
         mid = factory.getServer();
         mid.bind(PROXY_PORT).start().join();
     }
@@ -41,6 +53,15 @@ public class AcceptanceTest {
     static void after_all() {
         testServer.stop().join();
         mid.stop().join();
+    }
+
+    @Nested
+    @DisplayName("tls https acceptance test with decrypted")
+    class AcceptanceTestSecuredHttpsDecrypted extends AcceptanceTestTemplate {
+        @Override
+        JdkTestClient getTestClient() {
+            return httpsTestClientForDecrypt;
+        }
     }
 
     @Nested

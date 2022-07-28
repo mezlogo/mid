@@ -5,6 +5,7 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -12,8 +13,11 @@ import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslHandler;
 import mezlogo.mid.api.model.BufferedPublisher;
 import mezlogo.mid.api.model.FlowPublisher;
+import mezlogo.mid.api.model.HostAndPort;
 import mezlogo.mid.api.model.SubscriberToCallback;
 import mezlogo.mid.api.utils.MidUtils;
 import mezlogo.mid.netty.handler.ChannelInitializerCallback;
@@ -24,6 +28,7 @@ import mezlogo.mid.netty.handler.PublishHttpObjectHandler;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 public class AppFactory {
     private final AppConfig config;
@@ -32,6 +37,9 @@ public class AppFactory {
     private ServerBootstrap serverBootstrap;
     private NettyNetworkClient client;
     private NettyHttpTunnelServer server;
+    private Predicate<HostAndPort> isDecrypt;
+    private SslContext clientSslContext;
+    private SslContext serverSslContext;
 
     public AppFactory(AppConfig config) {
         this.config = config;
@@ -110,18 +118,18 @@ public class AppFactory {
     }
 
     public HttpTunnelHandler createHttpTunnelHandler() {
-        return new HttpTunnelHandler(MidUtils::uriParser, MidUtils::socketParser, getClient(), this);
+        return new HttpTunnelHandler(MidUtils::uriParser, MidUtils::socketParser, getIsDecrypt(), getClient(), this);
     }
 
     public PublishHttpObjectHandler createServerProxyHandler(FlowPublisher<HttpObject> requestPublisher) {
         return new PublishHttpObjectHandler(requestPublisher, ctx -> NettyUtils.resetHttpTunnel(ctx, this));
     }
 
-    public BufferedPublisher<ByteBuf> createBytebufPublisher() {
+    public FlowPublisher<ByteBuf> createBytebufPublisher() {
         return new BufferedPublisher<>();
     }
 
-    public BufferedPublisher<HttpObject> createHttpPublisher() {
+    public FlowPublisher<HttpObject> createHttpPublisher() {
         return new BufferedPublisher<>();
     }
 
@@ -129,18 +137,23 @@ public class AppFactory {
         return config;
     }
 
-    public BufferedPublisher<ByteBuf> initBytesClient(Channel channel) {
+    public FlowPublisher<ByteBuf> initBytesClient(Channel channel, boolean useDecryptor) {
         var responsePublisher = createBytebufPublisher();
 
-        if (config.verboseClient()) {
-            channel.pipeline().addLast("logger", new LoggingHandler("mezlogo.mid.netty.client"));
+        ChannelPipeline pipeline = channel.pipeline();
+        if (useDecryptor) {
+            pipeline.addLast("ssl-client", new SslHandler(getClientSslContext().newEngine(channel.alloc())));
         }
-        channel.pipeline().addLast("http-client-publisher-handler", new PublishBytebufHandler(responsePublisher));
+
+        if (config.verboseClient()) {
+            pipeline.addLast("logger", new LoggingHandler("mezlogo.mid.netty.client"));
+        }
+        pipeline.addLast("http-client-publisher-handler", new PublishBytebufHandler(responsePublisher));
 
         return responsePublisher;
     }
 
-    public BufferedPublisher<HttpObject> initHttpClient(Channel channel) {
+    public FlowPublisher<HttpObject> initHttpClient(Channel channel) {
         var responsePublisher = createHttpPublisher();
 
         if (config.verboseClient()) {
@@ -162,5 +175,47 @@ public class AppFactory {
 
     public PublishBytebufHandler createServerProxyBytesHandler(FlowPublisher<ByteBuf> requestPublisher) {
         return new PublishBytebufHandler(requestPublisher);
+    }
+
+    public void setSocketsToDecrypt(Predicate<HostAndPort> isDecrypt) {
+        this.isDecrypt = isDecrypt;
+    }
+
+    public Predicate<HostAndPort> getIsDecrypt() {
+        return null == isDecrypt ? socket -> false : isDecrypt;
+    }
+
+    public SslContext getServerSslContext() {
+        if (null == serverSslContext) {
+            serverSslContext = NettyUtils.serverSsl();
+        }
+        return serverSslContext;
+    }
+
+    public SslContext getClientSslContext() {
+        if (null == clientSslContext) {
+            clientSslContext = NettyUtils.clientSsl();
+        }
+        return clientSslContext;
+    }
+
+    public void turnHttpServerToRawBytes(Channel channel, boolean useDecryptor, FlowPublisher<ByteBuf> requestPublisher) {
+        var newHandler = this.createServerProxyBytesHandler(requestPublisher);
+        ChannelPipeline pipeline = channel.pipeline();
+        pipeline.remove(HttpServerCodec.class);
+        pipeline.remove(HttpTunnelHandler.class);
+        if (useDecryptor) {
+            if (null != pipeline.get(LoggingHandler.class)) {
+                pipeline.addBefore("logger", "ssl-server", getServerSslContext().newHandler(channel.alloc()));
+            } else {
+                pipeline.addLast("ssl-server", getServerSslContext().newHandler(channel.alloc()));
+            }
+        }
+        pipeline.addLast( "bytes-server-publisher-handler", newHandler);
+    }
+
+    public void turnHttpServerToHttpProxy(Channel channel, FlowPublisher<HttpObject> requestPublisher) {
+        var proxyHandler = this.createServerProxyHandler(requestPublisher);
+        channel.pipeline().replace(HttpTunnelHandler.class, "http-server-publisher-handler", proxyHandler);
     }
 }
