@@ -2,6 +2,7 @@ package mezlogo.mid.netty;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -16,8 +17,9 @@ import mezlogo.mid.api.model.FlowPublisher;
 import mezlogo.mid.api.model.SubscriberToCallback;
 import mezlogo.mid.api.utils.MidUtils;
 import mezlogo.mid.netty.handler.ChannelInitializerCallback;
-import mezlogo.mid.netty.handler.HttpProxyHandlerToPublisher;
 import mezlogo.mid.netty.handler.HttpTunnelHandler;
+import mezlogo.mid.netty.handler.PublishBytebufHandler;
+import mezlogo.mid.netty.handler.PublishHttpObjectHandler;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
@@ -40,13 +42,10 @@ public class AppFactory {
         return factory;
     }
 
-    public static Bootstrap createClient(NioEventLoopGroup group, AppConfig config) {
+    public static Bootstrap createClient(NioEventLoopGroup group) {
         Bootstrap bootstrap = new Bootstrap()
                 .group(group)
                 .handler(new ChannelInitializerCallback(ch -> {
-                    if (config.verboseClient()) {
-                        ch.pipeline().addLast("logger", new LoggingHandler("mezlogo.mid.netty.client"));
-                    }
                 }))
                 .channel(NioSocketChannel.class);
         return bootstrap;
@@ -71,7 +70,7 @@ public class AppFactory {
 
     public Bootstrap getClientBootstrap() {
         if (null == clientBootstrap) {
-            clientBootstrap = createClient(getGroup(), config);
+            clientBootstrap = createClient(getGroup());
         }
         return clientBootstrap;
     }
@@ -111,14 +110,18 @@ public class AppFactory {
     }
 
     public HttpTunnelHandler createHttpTunnelHandler() {
-        return new HttpTunnelHandler(MidUtils::uriParser, getClient(), this);
+        return new HttpTunnelHandler(MidUtils::uriParser, MidUtils::socketParser, getClient(), this);
     }
 
-    public HttpProxyHandlerToPublisher createServerProxyHandler(FlowPublisher<HttpObject> requestPublisher) {
-        return new HttpProxyHandlerToPublisher(requestPublisher, ctx -> NettyUtils.resetHttpTunnel(ctx, this));
+    public PublishHttpObjectHandler createServerProxyHandler(FlowPublisher<HttpObject> requestPublisher) {
+        return new PublishHttpObjectHandler(requestPublisher, ctx -> NettyUtils.resetHttpTunnel(ctx, this));
     }
 
-    public BufferedPublisher<HttpObject> createPublisher() {
+    public BufferedPublisher<ByteBuf> createBytebufPublisher() {
+        return new BufferedPublisher<>();
+    }
+
+    public BufferedPublisher<HttpObject> createHttpPublisher() {
         return new BufferedPublisher<>();
     }
 
@@ -126,19 +129,38 @@ public class AppFactory {
         return config;
     }
 
+    public BufferedPublisher<ByteBuf> initBytesClient(Channel channel) {
+        var responsePublisher = createBytebufPublisher();
+
+        if (config.verboseClient()) {
+            channel.pipeline().addLast("logger", new LoggingHandler("mezlogo.mid.netty.client"));
+        }
+        channel.pipeline().addLast("http-client-publisher-handler", new PublishBytebufHandler(responsePublisher));
+
+        return responsePublisher;
+    }
+
     public BufferedPublisher<HttpObject> initHttpClient(Channel channel) {
-        var responsePublisher = createPublisher();
+        var responsePublisher = createHttpPublisher();
 
         if (config.verboseClient()) {
             channel.pipeline().addLast("logger", new LoggingHandler("mezlogo.mid.netty.client"));
         }
         channel.pipeline().addLast("http-client-codec", new HttpClientCodec())
-                .addLast("adapter", new HttpProxyHandlerToPublisher(responsePublisher));
+                .addLast("http-client-publisher-handler", new PublishHttpObjectHandler(responsePublisher));
 
         return responsePublisher;
     }
 
-    public Flow.Subscriber<? super HttpObject> subscribe(Channel channel) {
-        return new SubscriberToCallback<>(channel::writeAndFlush, channel::close);
+    public Flow.Subscriber<? super ByteBuf> subscribeBytes(Channel channel) {
+        return new TraceSubscription<>(channel.toString(), new SubscriberToCallback<>(channel::writeAndFlush, channel::close));
+    }
+
+    public Flow.Subscriber<? super HttpObject> subscribeHttpObject(Channel channel) {
+        return new TraceSubscription<>(channel.toString(), new SubscriberToCallback<>(channel::writeAndFlush, channel::close));
+    }
+
+    public PublishBytebufHandler createServerProxyBytesHandler(FlowPublisher<ByteBuf> requestPublisher) {
+        return new PublishBytebufHandler(requestPublisher);
     }
 }

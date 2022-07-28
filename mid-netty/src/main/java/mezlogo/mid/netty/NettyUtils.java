@@ -14,13 +14,11 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
-import mezlogo.mid.netty.handler.HttpTunnelHandler;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 public interface NettyUtils {
     static ChannelFutureListener twoCallbacks(Consumer<Channel> ok, Consumer<Throwable> error) {
@@ -39,7 +37,7 @@ public interface NettyUtils {
     }
 
     static void resetHttpTunnel(ChannelHandlerContext ctx, AppFactory factory) {
-        ctx.pipeline().replace("proxy", "http-tunnel-handler", factory.createHttpTunnelHandler());
+        ctx.pipeline().replace("http-server-publisher-handler", "http-tunnel-handler", factory.createHttpTunnelHandler());
     }
 
     static CompletableFuture<Channel> openChannel(Bootstrap bootstrap, String host, int port) {

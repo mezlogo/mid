@@ -37,13 +37,5 @@ public class BufferedPublisher<T> implements FlowPublisher<T> {
             subscriber.onComplete();
         }
     }
-
-    public List<T> getBuffer() {
-        return new ArrayList<>(buffer);
-    }
-
-    public boolean getIsCompleted() {
-        return isCompleted;
-    }
 }
 

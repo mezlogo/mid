@@ -25,7 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-class HttpProxyHandlerToPublisherTest {
+class PublishHttpObjectHandlerTest {
     @Test
     void should_publish_GET_request_as_HttpRequest_and_LastHttpContent_without_content() {
         template_server(NettyUtils.createRequest("/get_example", "test_host", HttpMethod.GET, Optional.empty()), (req, last) -> {
@@ -66,7 +66,7 @@ class HttpProxyHandlerToPublisherTest {
         var ch = NettyTestHelpers.createEmbeddedHttpClient();
         FlowPublisher publisher = mock(FlowPublisher.class);
         var captor = ArgumentCaptor.forClass(HttpObject.class);
-        ch.pipeline().addLast(new HttpProxyHandlerToPublisher(publisher));
+        ch.pipeline().addLast(new PublishHttpObjectHandler(publisher));
 
         ch.writeInbound(response);
 
@@ -82,7 +82,7 @@ class HttpProxyHandlerToPublisherTest {
         FlowPublisher<HttpObject> publisher = mock(FlowPublisher.class);
         var captor = ArgumentCaptor.forClass(HttpObject.class);
         Consumer<ChannelHandlerContext> onLast = mock(Consumer.class);
-        ch.pipeline().addLast(new HttpProxyHandlerToPublisher(publisher, onLast));
+        ch.pipeline().addLast(new PublishHttpObjectHandler(publisher, onLast));
 
         ch.writeInbound(request);
 

@@ -1,24 +1,22 @@
 package mezlogo.mid.netty;
 
-import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import mezlogo.mid.api.utils.MidUtils;
-import mezlogo.mid.netty.handler.ChannelInitializerCallback;
-import mezlogo.mid.netty.handler.HttpTunnelHandler;
 import mezlogo.mid.netty.test.JdkTestClient;
 import mezlogo.mid.netty.test.UndertowTestServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class AcceptanceTest {
-    public static final int SERVER_PORT = 54321;
+    public static final int SERVER_HTTP_PORT = 54321;
+    public static final int SERVER_HTTPS_PORT = 54320;
     public static final int PROXY_PORT = 54322;
-    static JdkTestClient testClient;
+    static JdkTestClient httpTestClient;
+    static JdkTestClient httpsTestClient;
     static UndertowTestServer testServer;
     static NettyHttpTunnelServer mid;
 
@@ -27,17 +25,15 @@ public class AcceptanceTest {
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
         System.setProperty("jdk.httpclient.HttpClient.log", "all");
-        AppConfig config = new AppConfig(true, true);
 
-        testClient = JdkTestClient.createTestClient("localhost", SERVER_PORT, false, PROXY_PORT);
+        httpTestClient = JdkTestClient.createTestClient("localhost", SERVER_HTTP_PORT, false, PROXY_PORT);
+        httpsTestClient = JdkTestClient.createTestClient("localhost", SERVER_HTTPS_PORT, true, PROXY_PORT);
+
         testServer = UndertowTestServer.createTestServer();
-        testServer.start(SERVER_PORT).join();
-        NioEventLoopGroup group = new NioEventLoopGroup();
-        var clientBootsrap = new Bootstrap().handler(new ChannelInitializerCallback(ch -> {
-        })).group(group).channel(NioSocketChannel.class);
-        NettyNetworkClientFunction client = new NettyNetworkClientFunction((host, port) -> NettyUtils.openChannel(clientBootsrap, host, port), null);
-        AppFactory factory = new AppFactory(config);
-        mid = new NettyHttpTunnelServer(NettyHttpTunnelServer.createServer(NettyHttpTunnelServer.tunnelInitializer(() -> new HttpTunnelHandler(MidUtils::uriParser, client, factory), factory), group));
+        testServer.start(new UndertowTestServer.PortAndSll(SERVER_HTTP_PORT, false), new UndertowTestServer.PortAndSll(SERVER_HTTPS_PORT, true)).join();
+
+        var factory = new AppFactory(new AppConfig(true, true));
+        mid = factory.getServer();
         mid.bind(PROXY_PORT).start().join();
     }
 
@@ -47,42 +43,64 @@ public class AcceptanceTest {
         mid.stop().join();
     }
 
-    @Test
-    void when_call_greet_should_extract_query_param() {
-        var resp = testClient.get("/greet?name=Bob").join();
-        assertThat(resp.statusCode()).isEqualTo(200);
-        assertThat(resp.body()).isEqualTo("Hello, Bob!");
+    @Nested
+    @DisplayName("tls https acceptance test")
+    class AcceptanceTestSecuredHttps extends AcceptanceTestTemplate {
+        @Override
+        JdkTestClient getTestClient() {
+            return httpsTestClient;
+        }
     }
 
-    @Test
-    void when_call_status_should_return_503() {
-        var resp = testClient.get("/status?code=503").join();
-        assertThat(resp.statusCode()).isEqualTo(503);
-        assertThat(resp.body()).isEmpty();
+    @Nested
+    @DisplayName("plain http acceptance test")
+    class AcceptanceTestPlainHttp extends AcceptanceTestTemplate {
+        @Override
+        JdkTestClient getTestClient() {
+            return httpTestClient;
+        }
     }
 
-    @Test
-    void when_POST_echo_should_return_info_about_request() {
-        var resp = testClient.post("/echo", "payload").join();
-        assertThat(resp.statusCode()).isEqualTo(200);
-        assertThat(resp.body()).isEqualTo("POST,HTTP/1.1,false,7,null,CONTENT_LENGTH,7");
-    }
+    abstract static class AcceptanceTestTemplate {
+        abstract JdkTestClient getTestClient();
 
-    @Test
-    void when_GET_echo_should_return_info_about_request() {
-        var resp = testClient.get("/echo").join();
-        assertThat(resp.statusCode()).isEqualTo(200);
-        assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,false,0,null,CONTENT_LENGTH");
-    }
+        @Test
+        void when_call_greet_should_extract_query_param() {
+            var resp = getTestClient().get("/greet?name=Bob").join();
+            assertThat(resp.statusCode()).isEqualTo(200);
+            assertThat(resp.body()).isEqualTo("Hello, Bob!");
+        }
 
-    @Test
-    void when_GET_echo_TWICE_should_handle_keep_alive() {
-        var resp = testClient.get("/echo").join();
-        assertThat(resp.statusCode()).isEqualTo(200);
-        assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,false,0,null,CONTENT_LENGTH");
+        @Test
+        void when_call_status_should_return_503() {
+            var resp = getTestClient().get("/status?code=503").join();
+            assertThat(resp.statusCode()).isEqualTo(503);
+            assertThat(resp.body()).isEmpty();
+        }
 
-        resp = testClient.get("/echo").join();
-        assertThat(resp.statusCode()).isEqualTo(200);
-        assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,false,0,null,CONTENT_LENGTH");
+        @Test
+        void when_POST_echo_should_return_info_about_request() {
+            var resp = getTestClient().post("/echo", "payload").join();
+            assertThat(resp.statusCode()).isEqualTo(200);
+            assertThat(resp.body()).isEqualTo("POST,HTTP/1.1,7,text/plain,CONTENT_LENGTH,7");
+        }
+
+        @Test
+        void when_GET_echo_should_return_info_about_request() {
+            var resp = getTestClient().get("/echo").join();
+            assertThat(resp.statusCode()).isEqualTo(200);
+            assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,0,null,CONTENT_LENGTH");
+        }
+
+        @Test
+        void when_GET_echo_TWICE_should_handle_keep_alive() {
+            var resp = getTestClient().get("/echo").join();
+            assertThat(resp.statusCode()).isEqualTo(200);
+            assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,0,null,CONTENT_LENGTH");
+
+            resp = getTestClient().get("/echo").join();
+            assertThat(resp.statusCode()).isEqualTo(200);
+            assertThat(resp.body()).isEqualTo("GET,HTTP/1.1,0,null,CONTENT_LENGTH");
+        }
     }
 }

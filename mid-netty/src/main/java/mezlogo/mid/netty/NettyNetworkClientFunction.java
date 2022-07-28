@@ -1,12 +1,8 @@
 package mezlogo.mid.netty;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
-import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpObject;
-import io.netty.handler.logging.LoggingHandler;
-import mezlogo.mid.api.model.BufferedPublisher;
-import mezlogo.mid.api.model.SubscriberToCallback;
-import mezlogo.mid.netty.handler.HttpProxyHandlerToPublisher;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
@@ -29,7 +25,26 @@ public class NettyNetworkClientFunction implements NettyNetworkClient {
 
         channelFuture.thenAccept(channel -> {
             var responsePublisher = factory.initHttpClient(channel);
-            toTargetPublisher.subscribe(factory.subscribe(channel));
+            toTargetPublisher.subscribe(factory.subscribeHttpObject(channel));
+            future.complete(responsePublisher);
+        });
+        channelFuture.exceptionally(thr -> {
+            future.completeExceptionally(thr);
+            return null;
+        });
+
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<Flow.Publisher<ByteBuf>> openStreamConnection(String host, int port, Flow.Publisher<ByteBuf> toTargetPublisher) {
+        CompletableFuture<Flow.Publisher<ByteBuf>> future = new CompletableFuture<>();
+
+        CompletableFuture<Channel> channelFuture = connectionFactory.apply(host, port);
+
+        channelFuture.thenAccept(channel -> {
+            var responsePublisher = factory.initBytesClient(channel);
+            toTargetPublisher.subscribe(factory.subscribeBytes(channel));
             future.complete(responsePublisher);
         });
         channelFuture.exceptionally(thr -> {

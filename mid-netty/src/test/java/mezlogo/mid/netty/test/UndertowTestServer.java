@@ -6,6 +6,7 @@ import io.undertow.util.HeaderMap;
 import io.undertow.util.Headers;
 import io.undertow.util.MimeMappings;
 
+import javax.net.ssl.SSLContext;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
@@ -19,8 +20,16 @@ import java.util.function.Predicate;
 public class UndertowTestServer {
     public static final Function<HttpServerExchange, SimpleResponse> NOT_FOUND = httpServerExchange -> new SimpleResponse(404, Optional.of("NOT FOUND: " + httpServerExchange.getRequestURI()));
     private final static ExecutorService executor = Executors.newSingleThreadExecutor();
+    public static SSLContext sslContext;
     private final List<PredicateAndFunction> handlers = new ArrayList<>();
     private Undertow undertow;
+
+    public static SSLContext getSslContext() {
+        if (null == sslContext) {
+            sslContext = SslUtils.buildSSLContext();
+        }
+        return sslContext;
+    }
 
     public static int parseStringOrDefault(String value, int def) {
         try {
@@ -39,7 +48,7 @@ public class UndertowTestServer {
             boolean isTransferEncoding = headers.contains(Headers.TRANSFER_ENCODING);
             sb.append(exchange.getRequestMethod())
                     .append(",").append(exchange.getProtocol())
-                    .append(",").append(exchange.isSecure())
+//                    .append(",").append(exchange.isSecure())
                     .append(",").append(exchange.getRequestContentLength())
                     .append(",").append(headers.get(Headers.CONTENT_TYPE, 0))
                     .append(",").append(headers.contains(Headers.CONTENT_LENGTH) ? "CONTENT_LENGTH" : (isTransferEncoding ? "TRANSFER_ENCODING" : "NO_BODY"));
@@ -60,14 +69,26 @@ public class UndertowTestServer {
         return server;
     }
 
+    public static void main(String[] args) {
+        UndertowTestServer.createTestServer().start(new PortAndSll(8080, false), new PortAndSll(8443, true));
+    }
+
     public void addHandler(Predicate<String> predicate, Function<HttpServerExchange, SimpleResponse> function) {
         handlers.add(new PredicateAndFunction(predicate, function));
     }
 
-    public CompletableFuture<Void> start(int port) {
-        undertow = Undertow.builder()
-                .addHttpListener(port, "localhost")
-                .setHandler(exchange -> {
+    public CompletableFuture<Void> start(PortAndSll... portAndSlls) {
+        Undertow.Builder builder = Undertow.builder();
+
+        for (PortAndSll portAndSll : portAndSlls) {
+            if (portAndSll.ssl) {
+                builder.addHttpsListener(portAndSll.port, "localhost", getSslContext());
+            } else {
+                builder.addHttpListener(portAndSll.port, "localhost");
+            }
+        }
+
+        undertow = builder.setHandler(exchange -> {
                     var uri = exchange.getRequestURI();
                     var handler = handlers.stream()
                             .filter(it -> it.predicate.test(uri))
@@ -111,5 +132,8 @@ public class UndertowTestServer {
 
     public record PredicateAndFunction(Predicate<String> predicate,
                                        Function<HttpServerExchange, SimpleResponse> function) {
+    }
+
+    public record PortAndSll(int port, boolean ssl) {
     }
 }
