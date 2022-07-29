@@ -34,15 +34,6 @@ public class NettyHttpTunnelServer extends HttpTunnelServer {
         };
     }
 
-    public static ServerBootstrap createServer(ChannelInitializer<Channel> handlers, NioEventLoopGroup group) {
-        ServerBootstrap serverBootstrap = new ServerBootstrap()
-                .channel(NioServerSocketChannel.class)
-                .group(group)
-                .childHandler(handlers)
-                .option(ChannelOption.SO_BACKLOG, 128)
-                .childOption(ChannelOption.SO_KEEPALIVE, true);
-        return serverBootstrap;
-    }
 
     @Override
     public CompletableFuture<Void> start() {

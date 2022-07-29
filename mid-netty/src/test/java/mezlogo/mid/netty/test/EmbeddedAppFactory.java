@@ -205,6 +205,11 @@ public class EmbeddedAppFactory extends AppFactory {
             pipeline.remove(HttpObjectAggregator.class);
             if (useSsl) {
                 pipeline.addLast("ssl-client", sslContextSupplier.get().newHandler(channel.alloc()));
+                LoggingHandler t = pipeline.get(LoggingHandler.class);
+                if (null != t) {
+                    pipeline.remove(t);
+                    pipeline.addLast(t);
+                }
             }
             pipeline.addLast(new CombinedChannelDuplexHandler<>(new StringDecoder(), new StringEncoder()));
         }

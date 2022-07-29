@@ -1,12 +1,20 @@
 package mezlogo.mid.netty;
 
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.CombinedChannelDuplexHandler;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.ssl.SslContext;
 import mezlogo.mid.api.model.HostAndPort;
 import mezlogo.mid.api.utils.MidUtils;
 import mezlogo.mid.netty.test.EmbeddedAppFactory;
+import mezlogo.mid.netty.test.OutboundBytebufHandlerAdapter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -133,5 +141,32 @@ public class IntegrationTest {
 
     private FullHttpRequest post(String uri, String body) {
         return NettyUtils.createRequest(TESTURL + uri, HOST, HttpMethod.POST, Optional.of(body));
+    }
+
+    public static CombinedChannelDuplexHandler<StringDecoder, StringEncoder> stringCodec() {
+        return new CombinedChannelDuplexHandler<>(new StringDecoder(), new StringEncoder());
+    }
+    public static void main(String[] args) {
+        var serverSsl = NettyUtils.serverSsl();
+        var clientSsl = NettyUtils.clientSsl();
+        var client = new EmbeddedChannel(stringCodec(), new SimpleChannelInboundHandler<String>() {
+            @Override
+            protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
+                System.out.println("RESPONSE: " + msg);
+            }
+        });
+//        client.pipeline().addFirst(clientSsl.newHandler(client.alloc()));
+        var server = new EmbeddedChannel(stringCodec(), new SimpleChannelInboundHandler<String>() {
+            @Override
+            protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
+                System.out.println("ECHO: " + msg);
+                ctx.writeAndFlush("echo: [" + msg + "]");
+            }
+        });
+//        server.pipeline().addFirst(serverSsl.newHandler(server.alloc()));
+        server.pipeline().addFirst(new OutboundBytebufHandlerAdapter(client));
+
+        client.pipeline().addFirst(new OutboundBytebufHandlerAdapter(server));
+        client.writeOutbound("hello");
     }
 }
